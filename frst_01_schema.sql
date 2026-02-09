@@ -1,9 +1,3 @@
--- ============================================================================
--- EVILMATCH DATABASE - WITH frst_ PREFIX
--- A Dating App for Villains
--- All tables prefixed with: frst_
--- ============================================================================
-
 -- Drop tables if they exist (in reverse order of dependencies)
 DROP TABLE IF EXISTS frst_matches;
 DROP TABLE IF EXISTS frst_evil_plans;
@@ -80,6 +74,7 @@ CREATE TABLE frst_evil_plans (
 
 -- ============================================================================
 -- TABLE 4: frst_matches (Many-to-Many Self-Referencing)
+-- FIXED: Removed CHECK constraints on foreign key columns
 -- ============================================================================
 
 CREATE TABLE frst_matches (
@@ -102,13 +97,39 @@ CREATE TABLE frst_matches (
         ON DELETE CASCADE
         ON UPDATE CASCADE,
     
-    -- Prevent a villain from matching with themselves
-    CHECK (villain_id_1 <> villain_id_2),
-    
-    -- Ensure consistent ordering (prevent duplicate pairs)
-    CHECK (villain_id_1 < villain_id_2),
+    -- NOTE: The following constraints are enforced at the application level
+    -- or through triggers, as MySQL doesn't allow CHECK constraints on FK columns:
+    -- - villain_id_1 should not equal villain_id_2 (no self-matching)
+    -- - villain_id_1 should be less than villain_id_2 (prevent duplicate pairs)
     
     -- Indexes for query performance
     INDEX idx_status (match_status),
     INDEX idx_match_date (match_date)
 );
+
+-- ============================================================================
+-- OPTIONAL: Create trigger to prevent self-matching and duplicate pairs
+-- ============================================================================
+
+DELIMITER //
+
+CREATE TRIGGER frst_matches_before_insert
+BEFORE INSERT ON frst_matches
+FOR EACH ROW
+BEGIN
+    -- Prevent self-matching
+    IF NEW.villain_id_1 = NEW.villain_id_2 THEN
+        SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'A villain cannot match with themselves';
+    END IF;
+    
+    -- Ensure villain_id_1 < villain_id_2 to prevent duplicate pairs
+    IF NEW.villain_id_1 > NEW.villain_id_2 THEN
+        -- Swap the values
+        SET @temp = NEW.villain_id_1;
+        SET NEW.villain_id_1 = NEW.villain_id_2;
+        SET NEW.villain_id_2 = @temp;
+    END IF;
+END//
+
+DELIMITER ;
